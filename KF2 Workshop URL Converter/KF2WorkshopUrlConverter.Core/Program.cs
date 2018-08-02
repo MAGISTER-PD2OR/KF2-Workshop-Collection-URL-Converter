@@ -5,12 +5,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Reflection;
+using KF2WorkshopUrlConverter.Core.SteamWorkshop;
 
 namespace KF2WorkshopUrlConverter.Core
 {
     class Program
     {
-        private static readonly string appVersion = "1.0";
+        private static readonly string appVersion = "1.1";
         private static string dllFileName;
 
         static void Main(string[] args)
@@ -20,7 +21,6 @@ namespace KF2WorkshopUrlConverter.Core
             bool version = false;
             string url = null;
             string path = null;
-            string defaultWorkshopUrl = "steamcommunity.com/sharedfiles/filedetails/?id=";
             dllFileName = Path.GetFileName(Assembly.GetEntryAssembly().Location);
             List<string> extra;
 
@@ -62,45 +62,28 @@ namespace KF2WorkshopUrlConverter.Core
                 ShowError("Missing required option u|url=");
                 return;
             }
-            
-            if (!url.Contains(defaultWorkshopUrl))
-            {
-                ShowError("Invalid URL Format.");
-                return;
-            }
             #endregion
 
             #region Program
-            HtmlWeb web = new HtmlWeb();
-            HtmlDocument doc;
-            
-            //Check if the url has a protocol
+            Collection collection;
             try
             {
-                doc = web.Load(url);
+                collection = new Collection(url);
             }
-            catch(UriFormatException)
+            catch(Exception e)
             {
-                ShowError("Must contain http:// or https:// on the URL.");
-                return;
-            }
-
-            //Get Items Nodes
-            HtmlNodeCollection nodes = doc.DocumentNode.SelectNodes("//div[@class='collectionItemDetails']");
-
-            if (nodes == null)
-            {
-                ShowError("Not a Collection.");
+                ShowError(e.Message);
                 return;
             }
 
             //List Format
-            string title = doc.DocumentNode.SelectNodes("//div[@class='workshopItemTitle']")[0].InnerText;
+            string title = collection.Name;
             string header = $"### {title} ###" + Environment.NewLine + 
                             $"### Coll URL: {url} ###" + Environment.NewLine + 
-                            $"### {nodes.Count} Items | Last Query: {DateTime.Now} ###";
+                            $"### {collection.getNumberOfItems()} Items | Last Query: {DateTime.Now} ###";
             string dotIniUrlFormat = "ServerSubscribedWorkshopItems=";
             string footer = $"## END of {title} ##" + Environment.NewLine;
+            var ItemsArray = collection.Items;
 
             if (path == null)
             {
@@ -108,38 +91,23 @@ namespace KF2WorkshopUrlConverter.Core
             }
             else
             {
-                //File Exists?
-                if (new FileInfo(path).Exists)
+                using (FileStream fs = new FileStream(path, new FileInfo(path).Exists ? FileMode.Append : FileMode.OpenOrCreate))
                 {
-                    using (FileStream fs = new FileStream(path, FileMode.Append))
+                    using (StreamWriter file = new StreamWriter(fs))
                     {
-                        using (StreamWriter file = new StreamWriter(fs))
-                        {
-                            file.WriteLine(header);
-                        }
-                    }
-                }
-                else
-                {
-                    using (FileStream fs = new FileStream(path, FileMode.OpenOrCreate))
-                    {
-                        using (StreamWriter file = new StreamWriter(fs))
-                        {
-                            file.WriteLine(header);
-                        }
+                        file.WriteLine(header);
                     }
                 }
             }
 
-            foreach (HtmlNode n in nodes)
+            foreach (Item n in ItemsArray)
             {
-                string itemurl = n.SelectSingleNode(".//a").Attributes["href"].Value;
-                string output = dotIniUrlFormat + Regex.Replace(itemurl, @"[^0-9]", "") + " # " + n.SelectSingleNode(".//div[@class='workshopItemTitle']").InnerText;
+                string output = $"{dotIniUrlFormat}{n.ID} # {n.Name}";
 
                 if(path == null)
                 {
                     Console.WriteLine(output);
-                    if(nodes.IndexOf(n) == nodes.Count-1)
+                    if(ItemsArray.IndexOf(n) == collection.getNumberOfItems() - 1)
                     {
                         Console.WriteLine(footer);
                     }
@@ -151,7 +119,7 @@ namespace KF2WorkshopUrlConverter.Core
                         using (StreamWriter file = new StreamWriter(fs))
                         {
                             file.WriteLine(output);
-                            if(nodes.IndexOf(n) == nodes.Count-1)
+                            if(ItemsArray.IndexOf(n) == collection.getNumberOfItems() - 1)
                             {
                                 file.WriteLine(footer);
                             }
